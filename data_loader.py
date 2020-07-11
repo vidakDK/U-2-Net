@@ -21,7 +21,10 @@ class RescaleT(object):
 
     def __call__(self, image):
         new_size = (self.output_size, self.output_size)
+        print(image.shape)
+        print(new_size)
         img = transform.resize(image, new_size, mode='constant')
+        print('rescale T')
         return img
 
 
@@ -181,6 +184,7 @@ class ToTensorLab(object):
 
         else:  # with rgb color
             tmpImg = np.zeros((image.shape[0], image.shape[1], 3))
+            print(f"tmpimg shape: {tmpImg.shape}")
             image = image / np.max(image)
             if image.shape[2] == 1:
                 tmpImg[:, :, 0] = (image[:, :, 0] - 0.485) / 0.229
@@ -195,6 +199,8 @@ class ToTensorLab(object):
         # transforms.Normalize(mean = (0.485, 0.456, 0.406), std = (0.229, 0.224, 0.225))
         tmpImg = tmpImg.transpose((2, 0, 1))
         image = torch.from_numpy(tmpImg)
+        print('totensorlab')
+        print(f"final image shape: {image.shape}")
         return image
 
 

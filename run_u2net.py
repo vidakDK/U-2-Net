@@ -41,7 +41,7 @@ def save_output(image_name, pred, d_dir):
 
     im = Image.fromarray(predict_np * 255).convert('RGB')
     img_name = image_name.split("/")[-1]
-    image = io.imread(image_name)
+    image = _skio.imread(image_name)
     imo = im.resize((image.shape[1], image.shape[0]), resample=Image.BILINEAR)
 
     pb_np = np.array(imo)
@@ -68,17 +68,18 @@ def main(image_path):
 
     def load_image(image_path: str):
         image = _skio.imread(image_path)
-        image = _functional.to_tensor(image)
-        image.unsqueeze_(0)
+        # image = _functional.to_tensor(image)
+        # image.unsqueeze_(0)
         transform = _torchvision.transforms.Compose(
             [RescaleT(320), ToTensorLab(flag=0)]
         )
         image = transform(image)
+        image.unsqueeze_(0)
         image = image.type(torch.FloatTensor)
         image = Variable(image.cuda())
         return image
 
-    def process_image(image):
+    def process_image(image, image_path):
         d1, d2, d3, d4, d5, d6, d7 = net(image)
 
         # normalization
@@ -86,12 +87,13 @@ def main(image_path):
         pred = normPRED(pred)
 
         # save results to test_results folder
-        save_output('output.png', pred, 'outputs')
+        save_output(image_path, pred, 'outputs')
 
         del d1, d2, d3, d4, d5, d6, d7
 
     image = load_image(image_path)
-    process_image(image)
+    print(f"image shape before processing: {image.shape}")
+    process_image(image, image_path)
 
 
 if __name__ == "__main__":

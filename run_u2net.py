@@ -34,11 +34,21 @@ def normPRED(d):
     return dn
 
 
+def process_result(result, original_shape):
+    result.squeeze_()
+    result_np = result.cpu().data.numpy()
+    print(result_np)
+    image = Image.fromarray(result_np * 255).convert('RGB')
+    print(np.asarray(image))
+    image = np.asarray(image.resize(original_shape[:2], resample=Image.BILINEAR))
+    # print(image)
+    return image
+    
+
 def save_output(image_name, pred, d_dir):
     predict = pred
     predict = predict.squeeze()
     predict_np = predict.cpu().data.numpy()
-
     im = Image.fromarray(predict_np * 255).convert('RGB')
     img_name = image_name.split("/")[-1]
     image = _skio.imread(image_name)
@@ -68,6 +78,7 @@ def main(image_path):
 
     def load_image(image_path: str):
         image = _skio.imread(image_path)
+        shape = image.shape
         # image = _functional.to_tensor(image)
         # image.unsqueeze_(0)
         transform = _torchvision.transforms.Compose(
@@ -77,9 +88,9 @@ def main(image_path):
         image.unsqueeze_(0)
         image = image.type(torch.FloatTensor)
         image = Variable(image.cuda())
-        return image
+        return image, shape
 
-    def process_image(image, image_path):
+    def process_image(image, image_path, shape):
         d1, d2, d3, d4, d5, d6, d7 = net(image)
 
         # normalization
@@ -89,11 +100,13 @@ def main(image_path):
         # save results to test_results folder
         save_output(image_path, pred, 'outputs')
 
+        process_result(pred, shape)
+
         del d1, d2, d3, d4, d5, d6, d7
 
-    image = load_image(image_path)
+    image, shape = load_image(image_path)
     print(f"image shape before processing: {image.shape}")
-    process_image(image, image_path)
+    process_image(image, image_path, shape)
 
 
 if __name__ == "__main__":

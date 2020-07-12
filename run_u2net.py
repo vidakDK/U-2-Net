@@ -1,114 +1,73 @@
-import os
-from skimage import io as _skio, transform as _sktransform
-import torch
-import torchvision
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-import torchvision as _torchvision
-from torchvision.transforms import functional as _functional
-# from torchvision import transforms
-# import torch.optim as optim
+import typing as _t
 
 import numpy as np
-from PIL import Image
-import glob
+import torch as _torch
+import torchvision as _torchvision
+import transforms as _transforms
 
-from data_loader import RescaleT
-from data_loader import ToTensor
-from data_loader import ToTensorLab
-from data_loader import SalObjDataset
+from PIL import Image
+from skimage import io as _skio
+from torch.autograd import Variable
 
 from model import U2NET  # full size version 173.6 MB
-from model import U2NETP  # small version u2net 4.7 MB
 
 
-# normalize the predicted SOD probability map
-def normPRED(d):
-    ma = torch.max(d)
-    mi = torch.min(d)
+class BackgroundRemover:
+    def __init__(self, checkpoint_path: str):
+        net = U2NET(3, 1)
+        net.load_state_dict(_torch.load(checkpoint_path))
+        if _torch.cuda.is_available():
+            net.cuda()
+        net.eval()
+        self.net = net
 
-    dn = (d - mi) / (ma - mi)
-
-    return dn
-
-
-def process_result(result, original_shape):
-    result.squeeze_()
-    result_np = result.cpu().data.numpy()
-    print(result_np)
-    image = Image.fromarray(result_np * 255).convert('RGB')
-    print(np.asarray(image))
-    image = np.asarray(image.resize(original_shape[:2], resample=Image.BILINEAR))
-    # print(image)
-    return image
-    
-
-def save_output(image_name, pred, d_dir):
-    predict = pred
-    predict = predict.squeeze()
-    predict_np = predict.cpu().data.numpy()
-    im = Image.fromarray(predict_np * 255).convert('RGB')
-    img_name = image_name.split("/")[-1]
-    image = _skio.imread(image_name)
-    imo = im.resize((image.shape[1], image.shape[0]), resample=Image.BILINEAR)
-
-    pb_np = np.array(imo)
-
-    aaa = img_name.split(".")
-    bbb = aaa[0:-1]
-    imidx = bbb[0]
-    for i in range(1, len(bbb)):
-        imidx = imidx + "." + bbb[i]
-
-    imo.save(d_dir + imidx + '.png')
-
-
-def main(image_path):
-    # --------- 1. get image path and name ---------
-    model_name = 'u2net'  # u2netp
-    model_dir = './saved_models/u2net/u2net.pth'
-
-    net = U2NET(3, 1)
-    net.load_state_dict(torch.load(model_dir))
-    if torch.cuda.is_available():
-        net.cuda()
-    net.eval()
-
-    def load_image(image_path: str):
-        image = _skio.imread(image_path)
+    @staticmethod
+    def _to_torch(image: np.array) -> _t.Tuple[_torch.Tensor, tuple]:
         shape = image.shape
-        # image = _functional.to_tensor(image)
-        # image.unsqueeze_(0)
         transform = _torchvision.transforms.Compose(
-            [RescaleT(320), ToTensorLab(flag=0)]
+            [_transforms.Resize(320), _transforms.ToTensor()]
         )
         image = transform(image)
         image.unsqueeze_(0)
-        image = image.type(torch.FloatTensor)
+        image = image.type(_torch.FloatTensor)
         image = Variable(image.cuda())
         return image, shape
 
-    def process_image(image, image_path, shape):
-        d1, d2, d3, d4, d5, d6, d7 = net(image)
+    @staticmethod
+    def _norm_pred(d):
+        """ Normalize the predicted SOD probability map """
+        ma = _torch.max(d)
+        mi = _torch.min(d)
+        dn = (d - mi) / (ma - mi)
+        return dn
+
+    @staticmethod
+    def _process_result(result: _torch.Tensor, original_shape: tuple,
+                        save_image: bool) -> np.array:
+        result.squeeze_()
+        result_np = result.cpu().data.numpy()
+        image = Image.fromarray(result_np * 255).convert('RGB')
+        image = image.resize(original_shape[:2], resample=Image.BILINEAR)
+        if save_image:
+            image.save('./image_without_bg.png')
+        return np.asarray(image)
+
+    def process_image(self, image: np.array,
+                      save_image: bool = False) -> np.array:
+        image, shape = self._to_torch(image)
+        d1, d2, d3, d4, d5, d6, d7 = self.net(image)
 
         # normalization
         pred = d1[:, 0, :, :]
-        pred = normPRED(pred)
+        pred = self._norm_pred(pred)
 
-        # save results to test_results folder
-        save_output(image_path, pred, 'outputs')
-
-        process_result(pred, shape)
-
-        del d1, d2, d3, d4, d5, d6, d7
-
-    image, shape = load_image(image_path)
-    print(f"image shape before processing: {image.shape}")
-    process_image(image, image_path, shape)
+        result = self._process_result(pred, shape, save_image=save_image)
+        return result
 
 
 if __name__ == "__main__":
     image_path = '~/U-2-Net/test_data/test_images/1_girl.jpg'
-    main(image_path)
+    model_dir = './saved_models/u2net/u2net.pth'
+    bg_remover = BackgroundRemover(model_dir)
+    image = _skio.imread(image_path)
+    result = bg_remover.process_image(image, save_image=True)
